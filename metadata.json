@@ -1,0 +1,7 @@
+{
+  "name": "Trippings",
+  "description": "A mobile-first PWA for travel planning and expense tracking with offline-first capability and real-time collaboration vibes.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
