@@ -1,6 +1,6 @@
 
 export type TripRole = 'OWNER' | 'EDITOR' | 'VIEWER';
-export type PlanStatus = 'pending' | 'done' | 'canceled';
+export type PlanStatus = 'planned' | 'ongoing' | 'completed' | 'cancelled';
 
 export interface User {
   id: string;

@@ -16,24 +16,30 @@ import { db } from './db/db';
 import { useTrips } from './hooks/useTrips';
 import { useTripDetail } from './hooks/useTripDetail';
 import { useSettings } from './hooks/useSettings';
+import { useRealtimeNotifications } from './hooks/useRealtimeNotifications';
+import { useCrossDeviceNotifications } from './hooks/useCrossDeviceNotifications';
+import { useRealtimeSync } from './hooks/useRealtimeSync';
 import { updateFavicon, updatePWAIcons } from './lib/assets';
+import { pwaManager } from './lib/pwa';
+import { runNetworkDiagnostics } from './lib/networkTest';
 import { 
   Settings, 
   Bell, 
   Moon, 
   Sun, 
-  Monitor, 
-  PhilippinePeso, 
+  ChevronRight, 
+  ChevronLeft, 
+  Users, 
+  UserPlus, 
   CreditCard, 
-  ChevronRight,
-  ShieldCheck,
-  Map,
-  LogOut,
+  ShieldCheck, 
+  LogOut, 
+  PhilippinePeso,
   Wallet,
   Edit2,
   Check,
   X,
-  Users,
+  Map,
   MapPin,
   Calendar
 } from 'lucide-react';
@@ -57,8 +63,9 @@ const formatDate = (dateString: string) => {
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [theme, setTheme] = useState<ThemeMode>('light');
-  const [currentView, setCurrentView] = useState<'dashboard' | 'new-trip' | 'trip-detail'>('dashboard');
+  const [currentView, setCurrentView] = useState<'dashboard' | 'new-trip' | 'trip-detail' | 'profile' | 'settings'>('dashboard');
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
+  const [activeDetailTab, setActiveDetailTab] = useState('itinerary');
   const [toasts, setToasts] = useState<any[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -80,28 +87,79 @@ const App: React.FC = () => {
     cancelText: 'Cancel',
     onConfirm: () => {}
   });
+
+  // Remove network diagnostics for now to focus on real-time functionality
+  // useEffect(() => {
+  //   if (user) {
+  //     setTimeout(() => {
+  //       runNetworkDiagnostics();
+  //     }, 2000);
+  //   }
+  // }, [user]);
+
+  // Restore state from sessionStorage on mount (after user is available)
+  useEffect(() => {
+    if (typeof window !== 'undefined' && user) {
+      const savedView = sessionStorage.getItem('currentView');
+      const savedTripId = sessionStorage.getItem('selectedTripId');
+      const savedTab = sessionStorage.getItem('activeDetailTab');
+      
+      if (savedView) setCurrentView(savedView as any);
+      if (savedTripId) setSelectedTripId(savedTripId);
+      if (savedTab) setActiveDetailTab(savedTab as any);
+    }
+  }, [user]);
+
+  // Save state to sessionStorage when it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('currentView', currentView);
+      sessionStorage.setItem('selectedTripId', selectedTripId || '');
+    }
+  }, [currentView, selectedTripId]);
+
+  // Save active tab to sessionStorage when it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('activeDetailTab', activeDetailTab);
+    }
+  }, [activeDetailTab]);
   
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editUsername, setEditUsername] = useState('');
   const [loadingUser, setLoadingUser] = useState(true);
   const [systemVersion, setSystemVersion] = useState('');
-  const [activeDetailTab, setActiveDetailTab] = useState('itinerary');
 
   const { settings, updateSettings, sendNotification: sendBrowserNotification } = useSettings();
+  const { sendRealtimeNotification } = useRealtimeNotifications(user);
+  const { subscribe: subscribeToNotifications } = useCrossDeviceNotifications(user);
   const { trips, loading: loadingTrips, addTrip, deleteTrip } = useTrips(user?.email, user?.id);
   
-  const { 
-    trip: activeTrip, 
-    itinerary, 
-    expenses, 
-    activityLogs,
-    addItinerary,
-    updateItineraryStatus,
-    deleteItinerary,
-    addExpense,
-    deleteExpense
-  } = useTripDetail(selectedTripId || '');
+  // Setup real-time sync for notifications
+  const notificationSync = useRealtimeSync({
+    userId: user?.id || '',
+    userEmail: user?.email || '',
+    onNotificationChange: (notifications) => {
+      // Convert real-time notifications to AppNotification format
+      const appNotifications: AppNotification[] = notifications.map(n => ({
+        id: n.id,
+        userId: n.userId,
+        title: n.title,
+        body: n.body,
+        timestamp: n.timestamp,
+        read: n.read || false,
+        cleared: n.cleared || false,
+        type: 'TRIP_INVITATION' as NotificationType, // Default type for now
+        targetId: n.targetId,
+        targetType: n.targetType as AppNotification['targetType']
+      }));
+      setNotifications(appNotifications);
+    }
+  });
+  
+  // Remove duplicate useTripDetail call - TripDetail component handles its own data
+  const activeTrip = trips.find(t => t.id === selectedTripId);
 
   const fetchNotifications = useCallback(async () => {
     if (!user) return;
@@ -147,27 +205,31 @@ const App: React.FC = () => {
 
   const addInAppNotification = useCallback(async (title: string, body: string, options?: { type?: AppNotification['type'], targetId?: string, targetType?: AppNotification['targetType'] }) => {
     if (!user) return;
-    const newNotif: AppNotification = {
-      id: crypto.randomUUID(),
-      userId: user.id,
+    
+    // Use enhanced real-time notification system
+    const success = await sendRealtimeNotification(
+      user.id,
       title,
       body,
-      timestamp: Date.now(),
-      read: false,
-      type: options?.type || 'info',
-      targetId: options?.targetId,
-      targetType: options?.targetType
-    };
-    await db.notifications.add(newNotif);
-    await fetchNotifications();
-  }, [user, fetchNotifications]);
+      options?.type || 'info',
+      options?.targetId,
+      options?.targetType
+    );
+    
+    if (success) {
+      console.log('Real-time notification sent successfully');
+    } else {
+      console.error('Failed to send real-time notification');
+    }
+  }, [user, sendRealtimeNotification]);
 
   // Make notification refresh globally available
   useEffect(() => {
     if (typeof window !== 'undefined') {
       (window as any).refreshNotifications = fetchNotifications;
+      (window as any).sendRealtimeNotification = sendRealtimeNotification;
     }
-  }, [fetchNotifications]);
+  }, [fetchNotifications, sendRealtimeNotification]);
 
   // Subscribe to toast notifications
   useEffect(() => {
@@ -186,6 +248,11 @@ const App: React.FC = () => {
   // Invitation handling functions
   const handleAcceptInvitation = async (invitation: TripInvitation) => {
     if (!user) return;
+    
+    if (!invitation.tripId) {
+      showToast('Invalid invitation. Please try again.', 'error');
+      return;
+    }
     
     try {
       // Update share status to 'accepted'
@@ -229,6 +296,11 @@ const App: React.FC = () => {
 
   const handleRejectInvitation = async (invitation: TripInvitation) => {
     if (!user) return;
+    
+    if (!invitation.tripId) {
+      showToast('Invalid invitation. Please try again.', 'error');
+      return;
+    }
     
     try {
       // Update the share record status to 'rejected'
@@ -330,6 +402,15 @@ const App: React.FC = () => {
     if (params?.tripId) setSelectedTripId(params.tripId);
     if (params?.tab) setActiveDetailTab(params.tab);
     else setActiveDetailTab('itinerary');
+    
+    // Clear sessionStorage when going to dashboard
+    if (view === 'dashboard') {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('currentView');
+        sessionStorage.removeItem('selectedTripId');
+        sessionStorage.removeItem('activeDetailTab');
+      }
+    }
   };
 
   const handleLogin = async (identifier: string, password?: string) => {
@@ -347,11 +428,21 @@ const App: React.FC = () => {
     await authService.loginWithGoogle();
   };
 
-  const handleLogout = async () => {
-    await authService.logout();
+  const handleLogout = () => {
+    authService.logout();
     setUser(null);
     setCurrentView('dashboard');
-    setNotifications([]);
+    setSelectedTripId(null);
+    setActiveDetailTab('itinerary');
+    
+    // Clear sessionStorage on logout
+    if (typeof window !== 'undefined') {
+      sessionStorage.removeItem('currentView');
+      sessionStorage.removeItem('selectedTripId');
+      sessionStorage.removeItem('activeDetailTab');
+    }
+    
+    notify("Logged out successfully", { body: "You have been logged out" });
   };
 
   const handleUpdateProfile = async () => {
@@ -368,17 +459,24 @@ const App: React.FC = () => {
   };
 
   const handleNewTripSubmit = async (data: any) => {
-    const newTrip = await addTrip(data);
-    if (newTrip) {
-      setSelectedTripId(newTrip.id);
-      setCurrentView('trip-detail');
-      setActiveDetailTab('itinerary');
-      notify("New Trip Created!", { 
-        body: `Adventure to ${data.destination || data.title} is now in your itinerary.`,
-        type: 'success',
-        targetId: newTrip.id,
-        targetType: 'trip'
-      });
+    try {
+      const newTrip = await addTrip(data);
+      if (newTrip) {
+        setSelectedTripId(newTrip.id);
+        setCurrentView('trip-detail');
+        setActiveDetailTab('itinerary');
+        
+        // Show success notification after all state updates
+        notify("New Trip Created!", { 
+          body: `Adventure to ${data.destination || data.title} is now in your itinerary.`,
+          type: 'success',
+          targetId: newTrip.id,
+          targetType: 'trip'
+        });
+      }
+    } catch (error) {
+      console.error('Failed to create trip:', error);
+      // Error handling is done in the hook
     }
   };
 
@@ -432,12 +530,17 @@ const App: React.FC = () => {
               const responderName = nameMatch[1].toLowerCase();
               
               // Get all shares for this trip to find the responder
-              const { data: allShares } = await supabase
+              const { data: allShares, error: sharesError } = await supabase
                 .from('shares')
                 .select('user_email, status')
                 .eq('trip_id', notif.targetId);
               
-              if (allShares && allShares.length > 0) {
+              if (sharesError) {
+                console.warn('⚠️ Could not fetch shares data (likely owner):', sharesError);
+                // Default to current user for owner notifications
+                inviteeEmail = user?.email || '';
+                shareStatus = 'owner';
+              } else if (allShares && allShares.length > 0) {
                 // Get user details for all shares to match names properly
                 const userEmails = allShares.map(s => s.user_email);
                 const { data: usersData } = await supabase
@@ -467,14 +570,27 @@ const App: React.FC = () => {
           
           // If we have an invitee email, query their status
           if (inviteeEmail) {
-            const { data: shareData, error } = await supabase
-              .from('shares')
-              .select('status')
-              .eq('trip_id', notif.targetId)
-              .eq('user_email', inviteeEmail);
+            // First check if current user is the trip owner
+            const { data: tripData } = await supabase
+              .from('trips')
+              .select('user_id')
+              .eq('id', notif.targetId)
+              .single();
             
-            if (shareData && Array.isArray(shareData) && shareData.length > 0) {
-              shareStatus = (shareData as any)[0].status;
+            if (tripData && tripData.user_id === user?.id) {
+              // Current user is the owner
+              shareStatus = 'owner';
+            } else {
+              // Check shares table for collaborator status
+              const { data: shareData, error } = await supabase
+                .from('shares')
+                .select('status')
+                .eq('trip_id', notif.targetId)
+                .eq('user_email', inviteeEmail);
+              
+              if (shareData && Array.isArray(shareData) && shareData.length > 0) {
+                shareStatus = (shareData as any)[0].status;
+              }
             }
           }
         } catch (err) {
@@ -483,26 +599,21 @@ const App: React.FC = () => {
       }
 
       // Parse invitation data from notification body or create mock invitation
+      
       const invitation: TripInvitation = {
         id: notif.id,
-        tripId: notif.targetId || '',
+        tripId: notif.targetId || notif.trip_id || '',
         tripTitle: tripDetails?.title || notif.title.replace('Trip Invitation: ', ''),
         tripLocation: tripDetails?.destination || '',
         tripStartDate: tripDetails?.start_date || '',
         tripEndDate: tripDetails?.end_date || '',
         inviterName: 'Trip Creator', // Extract from notification body if possible
-        inviterId: '',
+        inviterId: notif.inviter_id || '',
         inviteeEmail: user?.email || '',
         status: shareStatus as 'pending' | 'accepted' | 'rejected' | 'owner',
         isOwner,
         createdAt: notif.timestamp
       };
-      
-      // Try to extract inviter name from notification body
-      const bodyMatch = notif.body.match(/^(\w+)\s+invited you/);
-      if (bodyMatch) {
-        invitation.inviterName = bodyMatch[1];
-      }
       
       setInvitationModal({ open: true, invitation });
     } catch (error) {
@@ -632,16 +743,53 @@ const App: React.FC = () => {
           tripId={selectedTripId}
           trip={activeTrip}
           user={user}
-          itinerary={itinerary}
-          expenses={expenses}
-          activityLogs={activityLogs}
           onBack={() => setCurrentView('dashboard')}
+          onTabChange={(tab) => setActiveDetailTab(tab)}
           initialTab={activeDetailTab}
-          onAddItinerary={async (d, u) => { await addItinerary(d, u); notify("Plan Added", { body: d.title, targetId: selectedTripId, targetType: 'trip' }); }}
-          onUpdateItineraryStatus={async (id, s, u) => { await updateItineraryStatus(id, s, u); notify("Status Updated", { body: `Item marked as ${s}`, targetId: selectedTripId, targetType: 'trip' }); }}
-          onDeleteItinerary={async (id, u) => { await deleteItinerary(id, u); notify("Item Removed", { body: "Deleted from timeline" }); }}
-          onAddExpense={async (d, u) => { await addExpense(d, u); notify("Expense Logged", { body: `${settings.currencySymbol}${d.amount}`, targetId: selectedTripId, targetType: 'trip' }); }}
-          onDeleteExpense={async (id, u) => { await deleteExpense(id, u); notify("Expense Removed", { body: "Deleted from logs" }); }}
+          onAddItinerary={async (d, u) => { 
+            try {
+              console.log('Add itinerary requested:', d);
+              notify("Itinerary Added", { body: `Added "${d.title}" to your trip`, targetId: selectedTripId, targetType: 'trip' }); 
+            } catch (error) {
+              console.error('Failed to add itinerary:', error);
+            }
+          }}
+          onUpdateItineraryStatus={async (id, status, u) => { 
+            try {
+              console.log('Update itinerary status requested:', id, status);
+              notify("Status Updated", { body: `Marked item as ${status}`, targetId: selectedTripId, targetType: 'trip' }); 
+            } catch (error) {
+              console.error('Failed to update itinerary status:', error);
+            }
+          }}
+          onDeleteItinerary={async (id, u) => { 
+            try {
+              console.log('Delete itinerary requested:', id);
+              notify("Item Deleted", { body: 'Item removed from itinerary', targetId: selectedTripId, targetType: 'trip' }); 
+            } catch (error) {
+              console.error('Failed to delete itinerary:', error);
+            }
+          }}
+          onAddExpense={async (d, u) => { 
+            try {
+              console.log('Add expense requested:', d);
+              notify("Expense Logged", { body: `${settings.currencySymbol}${d.amount}`, targetId: selectedTripId, targetType: 'trip' }); 
+            } catch (error) {
+              console.error('Failed to add expense:', error);
+            }
+          }}
+          onDeleteExpense={async (id, u) => { 
+            try {
+              console.log('Delete expense requested:', id);
+              notify("Expense Deleted", { body: 'Expense removed', targetId: selectedTripId, targetType: 'trip' }); 
+            } catch (error) {
+              console.error('Failed to delete expense:', error);
+            }
+          }}
+          refresh={() => { 
+            console.log('Refresh requested');
+            setCurrentView('dashboard');
+          }}
           currencySymbol={settings.currencySymbol}
         />
       )}
@@ -715,6 +863,8 @@ const App: React.FC = () => {
              </button>
              <h1 className="text-2xl font-black dark:text-white">Settings</h1>
           </div>
+          
+          {/* Currency Settings */}
           <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2.5 bg-emerald-100 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 rounded-2xl">
@@ -733,6 +883,53 @@ const App: React.FC = () => {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Theme Settings */}
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2.5 bg-purple-100 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 rounded-2xl">
+                <Moon size={20} />
+              </div>
+              <h3 className="font-black text-lg dark:text-white">Theme</h3>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'light', label: 'Light', icon: <Sun size={16} /> },
+                { id: 'dark', label: 'Dark', icon: <Moon size={16} /> },
+                { id: 'system', label: 'System', icon: <Settings size={16} /> }
+              ].map(theme => (
+                <button
+                  key={theme.id}
+                  onClick={() => updateSettings({ theme: theme.id as any })}
+                  className={`py-3 rounded-2xl border-2 transition-all font-bold flex items-center justify-center gap-1 ${settings.theme === theme.id ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400' : 'border-slate-50 dark:border-slate-800 text-slate-400'}`}
+                >
+                  {theme.icon}
+                  <span className="text-xs">{theme.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Notification Settings */}
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2.5 bg-blue-100 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 rounded-2xl">
+                <Bell size={20} />
+              </div>
+              <h3 className="font-black text-lg dark:text-white">Notifications</h3>
+            </div>
+            <button
+              onClick={() => updateSettings({ pushNotifications: !settings.pushNotifications })}
+              className={`w-full py-3 rounded-2xl border-2 transition-all font-bold flex items-center justify-center gap-2 ${
+                settings.pushNotifications 
+                  ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400' 
+                  : 'border-slate-50 dark:border-slate-800 text-slate-400'
+              }`}
+            >
+              <Bell size={16} />
+              {settings.pushNotifications ? 'Enabled' : 'Disabled'}
+            </button>
           </div>
         </div>
       )}

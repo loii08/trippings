@@ -77,7 +77,7 @@ const Layout: React.FC<LayoutProps> = ({
     onMarkNotificationRead(notif.id);
     
     // Don't close dropdown immediately for trip invitations
-    if (notif.type === 'trip_invitation' && onInvitationClick) {
+    if ((notif.type === 'trip_invitation' || notif.title.includes('Trip Invitation') || notif.body.includes('invited you to collaborate')) && onInvitationClick) {
       // Check if user still has access to this trip
       if (notif.targetId && user) {
         try {
@@ -94,24 +94,21 @@ const Layout: React.FC<LayoutProps> = ({
             return;
           }
           
-          // If not owner, check share access
-          const { data: shareData, error } = await supabase
+          // If not owner, check if user has a share for this trip
+          const { data: shareData, error: shareError } = await supabase
             .from('shares')
             .select('status')
             .eq('trip_id', notif.targetId)
             .eq('user_email', user.email)
             .single();
           
-          if (error || !shareData) {
-            // User no longer has access, don't open modal
-            showToast('You no longer have access to this trip.', 'error');
-            setShowNotifications(false);
+          // If user has access (share exists), allow clicking
+          if (!shareError && shareData) {
+            onInvitationClick(notif);
             return;
           }
-        } catch (err) {
-          console.error('Error checking trip access:', err);
-          // If we can't check access, allow the notification to proceed
-          // This prevents the notification system from breaking
+        } catch (error) {
+          console.error('Error checking trip access:', error);
         }
       }
       

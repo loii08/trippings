@@ -1,4 +1,5 @@
 -- Trippings Database Schema for Supabase
+-- Updated to match actual database structure on 2025-01-06
 
 -- Enable necessary extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -108,6 +109,12 @@ CREATE TABLE IF NOT EXISTS notifications (
     target_id UUID,
     target_type TEXT,
     read BOOLEAN DEFAULT FALSE,
+    cleared BOOLEAN DEFAULT FALSE,
+    trip_id UUID REFERENCES trips(id) ON DELETE CASCADE,
+    trip_title TEXT,
+    actor_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+    actor_name TEXT,
+    action TEXT,
     timestamp BIGINT DEFAULT EXTRACT(EPOCH FROM NOW()) * 1000,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, now()) NOT NULL
 );
@@ -201,6 +208,20 @@ CREATE POLICY "Users can update own profile" ON profiles FOR UPDATE USING (auth.
 DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
 CREATE POLICY "Users can insert own profile" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can view collaborator profiles" ON profiles;
+CREATE POLICY "Users can view collaborator profiles" ON profiles FOR SELECT USING (
+  auth.uid() = id OR
+  EXISTS (
+    SELECT 1 FROM shares 
+    WHERE shares.user_email = profiles.email 
+    AND EXISTS (
+      SELECT 1 FROM trips 
+      WHERE trips.id = shares.trip_id 
+      AND trips.user_id = auth.uid()
+    )
+  )
+);
+
 -- Trips policies
 DROP POLICY IF EXISTS "Users can view own trips" ON trips;
 CREATE POLICY "Users can view own trips" ON trips FOR SELECT USING (auth.uid() = user_id);
@@ -282,6 +303,10 @@ CREATE POLICY "Users can view own settings" ON user_settings FOR SELECT USING (a
 
 DROP POLICY IF EXISTS "Users can manage own settings" ON user_settings;
 CREATE POLICY "Users can manage own settings" ON user_settings FOR ALL USING (auth.uid() = user_id);
+
+-- Enable realtime for activity logs and notifications tables
+ALTER PUBLICATION supabase_realtime ADD TABLE activity_logs;
+ALTER PUBLICATION supabase_realtime ADD TABLE notifications;
 
 -- Create a function to handle new user signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()

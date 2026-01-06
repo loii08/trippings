@@ -37,6 +37,7 @@ import { showToast } from '../toast-system';
 import { formatTime } from '../utils/timeUtils';
 import ConfirmModal from '../components/ConfirmModal';
 import type { ConfirmModalType } from '../components/ConfirmModal';
+import { useTripDetail } from '../hooks/useTripDetail';
 
 interface TripDetailProps {
   tripId: string;
@@ -56,25 +57,41 @@ interface TripDetailProps {
   onGenerateItinerary?: (prompt: string, user: User) => Promise<void>;
   currencySymbol?: string;
   initialTab?: 'overview' | 'itinerary' | 'expenses' | 'collaborators' | 'members' | 'summary';
+  onTabChange?: (tab: 'overview' | 'itinerary' | 'expenses' | 'collaborators' | 'members' | 'summary') => void;
 }
 
 const TripDetail: React.FC<TripDetailProps> = ({ 
   tripId, 
   trip, 
   user,
-  itinerary, 
-  expenses, 
-  activityLogs,
   onBack, 
-  onAddItinerary, 
-  onAddExpense, 
-  onUpdateExpense,
-  onDeleteExpense,
   onAddActivityLog,
   onGenerateItinerary,
   currencySymbol = '₱',
-  initialTab = 'overview'
+  initialTab = 'overview',
+  onTabChange
 }) => {
+  // Use the hook to get real-time state updates
+  const { 
+    trip: hookTrip, 
+    itinerary, 
+    expenses, 
+    activityLogs, 
+    loading, 
+    loadingItineraryId, 
+    updatingItineraryId, 
+    deletingItineraryId, 
+    isAddingExpense,
+    addItinerary: hookAddItinerary, 
+    updateItineraryStatus: hookUpdateItineraryStatus, 
+    deleteItinerary: hookDeleteItinerary, 
+    addExpense: hookAddExpense, 
+    deleteExpense: hookDeleteExpense, 
+    refresh: fetchData 
+  } = useTripDetail(tripId, user.id, user.email);
+
+  // Use the hook trip data if available, fallback to prop
+  const currentTrip = hookTrip || trip;
   const [activeTab, setActiveTab] = useState<'overview' | 'itinerary' | 'expenses' | 'collaborators' | 'members' | 'summary'>(initialTab);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [shares, setShares] = useState<TripShare[]>([]);
@@ -178,13 +195,31 @@ const TripDetail: React.FC<TripDetailProps> = ({
 
       if (error) throw error;
 
-      // Map Supabase data to UI format
-      const mappedShares = (data || []).map(s => ({
-        ...s,
-        userEmail: s.user_email,
-        role: s.permission === 'edit' ? 'EDITOR' : 'VIEWER',
-        status: s.status || 'pending'
-      }));
+      // Get user details for all shares
+      const userEmails = (data || []).map(s => s.user_email);
+      let userDetails: any[] = [];
+      
+      if (userEmails.length > 0) {
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('id, email, name, username')
+          .in('email', userEmails);
+        
+        userDetails = usersData || [];
+      }
+
+      // Map Supabase data to UI format with user details
+      const mappedShares = (data || []).map(s => {
+        const userDetail = userDetails.find(u => u.email === s.user_email);
+        return {
+          ...s,
+          userEmail: s.user_email,
+          userName: userDetail?.name || userDetail?.username || 'Unknown',
+          role: s.permission === 'edit' ? 'EDITOR' : 'VIEWER',
+          status: s.status || 'pending'
+        };
+      });
+      
       setShares(mappedShares);
       
       // Also update IndexedDB for offline use
@@ -218,6 +253,20 @@ const TripDetail: React.FC<TripDetailProps> = ({
     }
     
     try {
+      // Validate user exists before proceeding
+      const invitedUser = await getUserByEmail(email.toLowerCase());
+      if (!invitedUser) {
+        showToast(`User with email "${email}" does not exist.`, 'error');
+        return;
+      }
+      
+      // Check if user is already invited to this trip
+      const existingShare = shares.find(s => s.userEmail === email.toLowerCase());
+      if (existingShare) {
+        showToast(`${email} has already been invited to this trip.`, 'warning');
+        return;
+      }
+      
       // Map TripRole to database permission values
       const permissionMap = {
         'OWNER': 'view',      // Try 'view' since it's the default
@@ -227,51 +276,43 @@ const TripDetail: React.FC<TripDetailProps> = ({
       
       const permission = permissionMap[role] || 'view';
       
-      const invitedUserId = await getUserIdByEmail(email.toLowerCase());
-      if (invitedUserId) {
-        // Create share record using service role
-        const { error: shareError } = await supabase
-          .from('shares')
-          .insert([{
-            trip_id: trip.id,
-            user_email: email.toLowerCase(),
-            permission: permission,
-            status: 'pending'
-          }]);
+      // Create share record using service role
+      const { error: shareError } = await supabase
+        .from('shares')
+        .insert([{
+          trip_id: trip.id,
+          user_email: email.toLowerCase(),
+          permission: permission,
+          status: 'pending'
+        }]);
 
-        if (shareError) {
-          // Check if it's a duplicate key error (already invited)
-          if (shareError.code === '23505') {
-            showToast(`${email} has already been invited to this trip.`, 'warning');
-            if (e.currentTarget) {
-              e.currentTarget.email.value = '';
-            }
-            setShowInviteModal(false);
-            return;
-          }
-          throw shareError;
-        }
+      if (shareError) {
+        throw shareError;
+      }
 
-        // Create notification
-        try {
-          if (user) {
-            const result = await supabase.rpc('create_trip_notification', {
-              p_user_id: invitedUserId,
-              p_title: `Trip Invitation: ${trip.title}`,
-              p_body: `${user.name || user.username || 'Trip owner'} invited you to collaborate on "${trip.title}"${trip.destination ? ` in ${trip.destination}` : ''}`,
-              p_target_id: trip.id
-            });
-            
-            if (result.error) {
-              console.error('Notification creation failed:', result.error);
-            }
+      // Create notification (only one notification)
+      try {
+        // Get the sendRealtimeNotification function from window (passed from App.tsx)
+        const sendRealtimeNotification = (window as any).sendRealtimeNotification;
+        if (sendRealtimeNotification) {
+          const success = await sendRealtimeNotification(
+            invitedUser.id,
+            `Trip Invitation: ${trip.title}`,
+            `${user.name || user.username || 'Trip owner'} invited you to collaborate on "${trip.title}"${trip.destination ? ` in ${trip.destination}` : ''}`,
+            'info',
+            trip.id,
+            'trip'
+          );
+          
+          if (success) {
+            // Invitation sent successfully
           } else {
-            console.warn('User is null, skipping notification creation');
+            console.error('Failed to send real-time invitation');
           }
-        } catch (notifError) {
-          console.error('Error in notification creation:', notifError);
-          // Don't throw - continue with success flow
         }
+      } catch (notifError) {
+        console.error('Error in notification creation:', notifError);
+        // Don't throw - continue with success flow
       }
       
       // Reset form
@@ -284,27 +325,21 @@ const TripDetail: React.FC<TripDetailProps> = ({
       showToast(`Invitation sent to ${email}`, 'success');
       
       // Refresh shares from database to show new collaborator
-      await refreshShares();
+      await fetchShares();
       
       // Refresh notifications to show latest updates
       if (typeof window !== 'undefined' && (window as any).refreshNotifications) {
         (window as any).refreshNotifications();
       }
-    } catch (error) {
-      console.error('Error sending invitation:', error);
-      console.error('User object:', user);
-      console.error('Error details:', {
-        message: error?.message,
-        stack: error?.stack,
-        name: error?.name
-      });
       
-      // Handle specific duplicate error
-      if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
+    } catch (error: any) {
+      console.error('Error sending invitation:', error);
+      
+      // Check if it's a duplicate key error (already invited)
+      if (error.code === '23505') {
         showToast(`${email} has already been invited to this trip.`, 'warning');
-        if (e.currentTarget) {
-          e.currentTarget.email.value = '';
-        }
+      } else {
+        showToast('Failed to send invitation. Please try again.', 'error');
         setShowInviteModal(false);
         return;
       }
@@ -313,15 +348,15 @@ const TripDetail: React.FC<TripDetailProps> = ({
     }
   };
 
-  // Helper function to get user ID by email
-  const getUserIdByEmail = async (email: string): Promise<string | null> => {
+  // Helper function to get user details by email
+  const getUserByEmail = async (email: string): Promise<{ id: string; name: string; username: string } | null> => {
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id')
+        .select('id, name, username')
         .eq('email', email)
         .single();
-      return data?.id || null;
+      return data || null;
     } catch {
       return null;
     }
@@ -348,6 +383,23 @@ const TripDetail: React.FC<TripDetailProps> = ({
             .eq('id', id);
 
           if (error) throw error;
+
+          // Send notification to removed user
+          await supabase
+            .from('notifications')
+            .insert([{
+              user_id: null, // Will be set by mapping
+              user_email: share.userEmail,
+              title: 'Removed from Trip',
+              body: `You have been removed from "${trip?.title || 'the trip'}" by the trip owner`,
+              type: 'warning',
+              trip_id: tripId,
+              trip_title: trip?.title || 'Trip',
+              actor_id: user?.id,
+              actor_name: user?.name || user?.username,
+              action: 'member_removed',
+              created_at: new Date().toISOString()
+            }]);
 
           // Remove from local IndexedDB
           await db.shares.delete(id);
@@ -442,12 +494,21 @@ const TripDetail: React.FC<TripDetailProps> = ({
   };
 
   const handleActivityClick = (log: ActivityLog) => {
+    let targetTab: 'overview' | 'itinerary' | 'expenses' | 'collaborators' | 'members' | 'summary' = 'overview';
+    
     if (log.action.includes('Expense')) {
-      setActiveTab('expenses');
+      targetTab = 'expenses';
     } else if (log.action.includes('Item') || log.action.includes('Status')) {
-      setActiveTab('itinerary');
-    } else if (log.action.includes('Invite') || log.userName.includes('Member')) {
-      setActiveTab('members');
+      targetTab = 'itinerary';
+    } else if (log.action.includes('Invite') || log.details.includes('invited') || log.details.includes('collaborator')) {
+      targetTab = 'members';
+    } else if (log.action.includes('Added') || log.action.includes('Deleted') || log.action.includes('Status Change')) {
+      targetTab = 'itinerary';
+    }
+    
+    setActiveTab(targetTab);
+    if (onTabChange) {
+      onTabChange(targetTab);
     }
   };
 
@@ -496,12 +557,13 @@ const onDeleteItinerary = async (id: string, user: User) => {
   const generateAiInsights = async () => {
     setIsGenerating(true);
     try {
-      // Generate insights based on trip data
-      const completedItems = itinerary.filter(i => i.status === 'done').length;
+      // Generate insights based on current state data
+      const completedItems = itinerary.filter(i => i.status === 'completed').length;
       const totalItems = itinerary.length;
       const completionRate = totalItems > 0 ? (completedItems / totalItems * 100).toFixed(1) : '0';
       
-      const insights = `## 🎯 Trip Progress Insights
+      // Create insights data
+      const insightsData = `## 🎯 Trip Progress Insights
       
 **Completion Rate**: ${completionRate}% (${completedItems}/${totalItems} items completed)
 
@@ -521,10 +583,22 @@ const onDeleteItinerary = async (id: string, user: User) => {
 
 Have an amazing trip! ✈️`;
 
-      setAiInsights(insights);
+      // Update IndexedDB with insights for offline persistence
+      await db.trips.update(tripId, { 
+        ai_insights: insightsData,
+        ai_insights_generated_at: new Date().toISOString()
+      });
+
+      // Update React state
+      setAiInsights(insightsData);
+      
+      // Show success notification
+      showToast('AI insights generated successfully!', 'success');
+      
     } catch (err) {
       console.error('Error generating insights:', err);
       setAiInsights("Unable to generate insights at this time. Please try again later.");
+      showToast('Failed to generate AI insights', 'error');
     } finally {
       setIsGenerating(false);
     }
@@ -596,30 +670,47 @@ Have an amazing trip! ✈️`;
                   </div>
                   <div className="space-y-4 pl-2 border-l-2 border-slate-100 dark:border-slate-900 ml-1">
                     {itineraryByDate[date].sort((a,b)=>a.time.localeCompare(b.time)).map(entry => (
-                      <div key={entry.id} className={`group relative bg-white dark:bg-slate-800 p-5 rounded-[2rem] shadow-sm border transition-all ${entry.status === 'done' ? 'opacity-60 border-emerald-100 dark:border-emerald-900/20 shadow-none' : 'border-slate-100 dark:border-slate-700'}`}>
+                      <div key={entry.id} className={`group relative bg-white dark:bg-slate-800 p-5 rounded-[2rem] shadow-sm border transition-all ${entry.status === 'completed' ? 'opacity-60 border-emerald-100 dark:border-emerald-900/20 shadow-none' : 'border-slate-100 dark:border-slate-700'}`}>
+                        {entry.status !== 'planned' && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className={`bg-gray-500 text-white text-lg font-black px-6 py-3 rounded-md uppercase tracking-wider transform -rotate-12 opacity-30 select-none border-2 border-gray-600 shadow-lg`}>
+                              {entry.status === 'completed' ? 'DONE' : entry.status === 'cancelled' ? 'CANCELLED' : entry.status.toUpperCase()}
+                            </div>
+                          </div>
+                        )}
                         <div className="flex gap-4">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all ${entry.status === 'done' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600' : 'bg-slate-50 dark:bg-slate-700 text-slate-400'}`}>
-                             {entry.status === 'done' ? <CheckCircle2 size={22} strokeWidth={2.5} /> : <Timer size={22} strokeWidth={2.5} />}
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all ${entry.status === 'completed' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600' : 'bg-slate-50 dark:bg-slate-700 text-slate-400'}`}>
+                             {entry.status === 'completed' ? <CheckCircle2 size={22} strokeWidth={2.5} /> : <Timer size={22} strokeWidth={2.5} />}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex justify-between items-start mb-1">
                                <div className="text-indigo-600 dark:text-indigo-400 font-black text-[10px] tracking-widest">{entry.time}</div>
                                <div className="flex items-center gap-1.5">
                                  <button 
-                                  onClick={() => onUpdateItineraryStatus(entry.id, entry.status === 'done' ? 'pending' : 'done', user)}
-                                  className={`p-2 rounded-xl transition-all active:scale-90 ${entry.status === 'done' ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-50 dark:bg-slate-950 text-slate-400 hover:text-emerald-500'}`}
+                                  onClick={() => hookUpdateItineraryStatus(entry.id, entry.status === 'completed' ? 'planned' : 'completed', user)}
+                                  disabled={updatingItineraryId === entry.id}
+                                  className={`p-2 rounded-xl transition-all active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed ${entry.status === 'completed' ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-50 dark:bg-slate-950 text-slate-400 hover:text-emerald-500'}`}
                                  >
-                                   <Check size={14} strokeWidth={3} />
+                                   {updatingItineraryId === entry.id ? (
+                                     <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                                   ) : (
+                                     <Check size={14} strokeWidth={3} />
+                                   )}
                                  </button>
                                  <button 
-                                  onClick={() => onUpdateItineraryStatus(entry.id, entry.status === 'canceled' ? 'pending' : 'canceled', user)}
-                                  className={`p-2 rounded-xl transition-all active:scale-90 ${entry.status === 'canceled' ? 'bg-red-500 text-white shadow-md' : 'bg-slate-50 dark:bg-slate-950 text-slate-400 hover:text-red-500'}`}
+                                  onClick={() => hookUpdateItineraryStatus(entry.id, entry.status === 'cancelled' ? 'planned' : 'cancelled', user)}
+                                  disabled={updatingItineraryId === entry.id}
+                                  className={`p-2 rounded-xl transition-all active:scale-90 disabled:opacity-50 disabled:cursor-not-allowed ${entry.status === 'cancelled' ? 'bg-red-500 text-white shadow-md' : 'bg-slate-50 dark:bg-slate-950 text-slate-400 hover:text-red-500'}`}
                                  >
-                                   <Ban size={14} strokeWidth={3} />
+                                   {updatingItineraryId === entry.id ? (
+                                     <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                                   ) : (
+                                     <Ban size={14} strokeWidth={3} />
+                                   )}
                                  </button>
                                </div>
                             </div>
-                            <h4 className={`font-black text-slate-900 dark:text-white text-base leading-tight ${entry.status === 'done' ? 'line-through' : ''}`}>{entry.title}</h4>
+                            <h4 className={`font-black text-slate-900 dark:text-white text-base leading-tight ${entry.status === 'cancelled' ? 'line-through' : ''}`}>{entry.title}</h4>
                             <div className="flex flex-wrap items-center gap-3 mt-2">
                                {entry.location && <p className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-bold"><MapPin size={10} strokeWidth={3} /> {entry.location}</p>}
                                <p className="text-[10px] text-slate-400 font-bold tracking-tight">by {getUserName(entry.createdBy)} • {formatRelativeTime(entry.createdAt)}</p>
@@ -627,10 +718,15 @@ Have an amazing trip! ✈️`;
                           </div>
                         </div>
                         <button 
-                          onClick={() => onDeleteItinerary(entry.id, user)} 
-                          className="absolute -right-2 -top-2 p-2 bg-white dark:bg-slate-800 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-all shadow-xl border border-red-50 dark:border-red-950"
+                          onClick={() => hookDeleteItinerary(entry.id, user)} 
+                          disabled={deletingItineraryId === entry.id}
+                          className="absolute -right-2 -top-2 p-2 bg-white dark:bg-slate-800 text-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-all shadow-xl border border-red-50 dark:border-red-950 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <Trash2 size={12} strokeWidth={3} />
+                          {deletingItineraryId === entry.id ? (
+                            <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
+                          ) : (
+                            <Trash2 size={12} strokeWidth={3} />
+                          )}
                         </button>
                       </div>
                     ))}
@@ -670,7 +766,7 @@ Have an amazing trip! ✈️`;
                   </div>
                   <div className="flex items-center gap-4 flex-shrink-0">
                     <p className="font-black text-slate-900 dark:text-white text-lg tracking-tighter">{formatCurrency(expense.amount)}</p>
-                    <button onClick={() => onDeleteExpense(expense.id, user)} className="text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-2"><Trash2 size={16} /></button>
+                    <button onClick={() => hookDeleteExpense(expense.id, user)} className="text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100 p-2"><Trash2 size={16} /></button>
                   </div>
                 </div>
               ))}
@@ -802,16 +898,17 @@ Have an amazing trip! ✈️`;
                         <div className="flex items-center gap-4 min-w-0">
                            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400"><Mail size={20} /></div>
                            <div className="min-w-0">
-                             <p className="text-sm font-black dark:text-white truncate">{share.userEmail}</p>
+                             <p className="text-sm font-black dark:text-white truncate">{share.userName || share.userEmail}</p>
+                             <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em]">{share.userEmail}</p>
                              <div className="flex items-center gap-2 mt-1">
                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-xl tracking-widest uppercase inline-block ${share.role === 'EDITOR' ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>{share.role}</span>
                                <span className={`text-[10px] font-black px-2.5 py-1 rounded-xl tracking-widest uppercase inline-block ${
                                  share.status === 'pending' ? 'bg-yellow-100 text-yellow-600' :
                                  share.status === 'rejected' ? 'bg-red-100 text-red-600' :
-                                 share.status === 'accepted' ? 'bg-green-100 text-green-600' :
+                                 share.status === 'actual' ? 'bg-green-100 text-green-600' :
                                  'bg-slate-100 text-slate-500'
                                }`}>
-                                 {share.status || 'pending'}
+                                 {share.status === 'actual' ? 'ACCEPTED' : (share.status || 'pending').toUpperCase()}
                                </span>
                              </div>
                            </div>
@@ -858,21 +955,53 @@ Have an amazing trip! ✈️`;
           <div className="bg-white dark:bg-slate-800 w-full max-w-md rounded-[3rem] p-10 space-y-8 shadow-2xl animate-in slide-in-from-bottom-12">
             <div className="flex justify-between items-center"><h2 className="text-2xl font-black dark:text-white">Log {activeTab === 'itinerary' ? 'Plan' : 'Expense'}</h2><button onClick={() => setShowAddModal(false)} className="p-3 bg-slate-100 dark:bg-slate-700 rounded-full text-slate-400 transition-transform active:scale-90"><Plus size={24} className="rotate-45" /></button></div>
             {activeTab === 'itinerary' ? (
-              <form className="space-y-5" onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await onAddItinerary({ date: fd.get('date') as string, time: fd.get('time') as string, title: fd.get('title') as string, location: fd.get('location') as string, notes: fd.get('notes') as string }, user); setShowAddModal(false); }}>
+              <form className="space-y-5" onSubmit={async (e) => { 
+                e.preventDefault(); 
+                const fd = new FormData(e.currentTarget); 
+                await hookAddItinerary(
+                  { 
+                    date: fd.get('date') as string, 
+                    time: fd.get('time') as string, 
+                    title: fd.get('title') as string, 
+                    location: fd.get('location') as string, 
+                    notes: fd.get('notes') as string 
+                  }, 
+                  user
+                ); 
+                setShowAddModal(false); 
+              }}>
                 <input name="title" required placeholder="What's next?" className="w-full p-5 rounded-2xl border-2 border-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white font-black focus:border-indigo-600 outline-none text-lg" autoFocus />
                 <div className="grid grid-cols-2 gap-4"><input name="date" type="date" required className="p-4 rounded-2xl border-2 border-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white font-bold" defaultValue={trip.startDate} /><input name="time" type="time" required className="p-4 rounded-2xl border-2 border-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white font-bold" defaultValue="12:00" /></div>
                 <input name="location" placeholder="Destination name..." className="w-full p-5 rounded-2xl border-2 border-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white font-bold focus:border-indigo-600 outline-none" />
-                <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-[1.75rem] shadow-2xl shadow-indigo-100 dark:shadow-none active:scale-[0.98]">Add to Timeline</button>
+                <button type="submit" disabled={loadingItineraryId === 'adding'} className="w-full bg-indigo-600 text-white font-black py-5 rounded-[1.75rem] shadow-2xl shadow-indigo-100 dark:shadow-none active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100 transition-all flex items-center justify-center gap-3 min-h-[60px]">
+                  {loadingItineraryId === 'adding' ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Adding...</span>
+                    </>
+                  ) : (
+                    <span>Add to Timeline</span>
+                  )}
+                </button>
               </form>
             ) : (
-              <form className="space-y-8" onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await onAddExpense({ amount: parseFloat(fd.get('amount') as string), category: fd.get('category') as string, description: fd.get('description') as string, payer: user.name || user.username, date: fd.get('date') as string, currency: 'PHP' }, user); setShowAddModal(false); }}>
+              <form className="space-y-8" onSubmit={async (e) => { e.preventDefault(); const fd = new FormData(e.currentTarget); await hookAddExpense({ amount: parseFloat(fd.get('amount') as string), category: fd.get('category') as string, description: fd.get('description') as string, payer: user.name || user.username, date: fd.get('date') as string, currency: 'PHP' }, user); setShowAddModal(false); }}>
                 <div className="text-center"><div className="flex items-center justify-center gap-3"><span className="text-4xl font-black text-indigo-400">{currencySymbol}</span><input name="amount" type="number" step="0.01" required placeholder="0.00" className="w-48 text-6xl font-black text-center border-b-4 border-indigo-100 dark:border-slate-700 dark:bg-slate-800 dark:text-white outline-none py-3" autoFocus /></div></div>
                 <input name="description" required placeholder="Log details..." className="w-full p-5 rounded-2xl border-2 border-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white font-black focus:border-indigo-600 outline-none" />
                 <div className="grid grid-cols-2 gap-4">
                   <select name="category" className="p-4 rounded-2xl border-2 border-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white font-bold">{Object.values(ExpenseCategory).map(cat => <option key={cat} value={cat}>{cat}</option>)}</select>
                   <input name="date" type="date" required className="p-4 rounded-2xl border-2 border-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-white font-bold" defaultValue={new Date().toISOString().split('T')[0]} />
                 </div>
-                <button type="submit" className="w-full bg-indigo-600 text-white font-black py-5 rounded-[1.75rem] shadow-2xl shadow-indigo-100 dark:shadow-none active:scale-[0.98]">Log Expense</button>
+                <button type="submit" disabled={isAddingExpense} className="w-full bg-indigo-600 text-white font-black py-5 rounded-[1.75rem] shadow-2xl shadow-indigo-100 dark:shadow-none active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100 transition-all flex items-center justify-center gap-3 min-h-[60px]">
+                  {isAddingExpense ? (
+                    <>
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Logging Expense...</span>
+                    </>
+                  ) : (
+                    <span>Log Expense</span>
+                  )}
+                </button>
               </form>
             )}
           </div>
