@@ -4,6 +4,8 @@ import { User, AppNotification } from '../types';
 import { supabase } from '../lib/supabase';
 import { showToast } from '../toast-system';
 import Logo from './Logo';
+import OfflineIndicator from './OfflineIndicator';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { 
   LogOut, 
   Compass, 
@@ -49,9 +51,13 @@ const Layout: React.FC<LayoutProps> = ({
   const [showNotifications, setShowNotifications] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   
+  const networkStatus = useNetworkStatus();
   const unreadCount = notifications.filter(n => !n.read && !n.cleared).length;
   const activeNotifications = notifications.filter(n => !n.cleared);
   const isAccountActive = currentView === 'profile' || currentView === 'settings';
+  
+  // Calculate top padding to account for offline indicator when present
+  const topPadding = networkStatus.isOffline ? 'pt-20 md:pt-32' : 'pt-4 md:pt-28';
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -154,10 +160,18 @@ const Layout: React.FC<LayoutProps> = ({
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-surface text-primary transition-colors">
+    <div className="min-h-screen flex flex-col bg-surface text-primary transition-colors relative">
+      {/* Offline Indicator */}
+      <OfflineIndicator 
+        isOnline={networkStatus.isOnline}
+        isOffline={networkStatus.isOffline}
+        connectionType={networkStatus.connectionType}
+        effectiveType={networkStatus.effectiveType}
+        lastOnlineTime={networkStatus.lastOnlineTime}
+      />
       
       {/* Modern Desktop Header */}
-      <header className="hidden md:flex fixed top-0 left-0 right-0 h-20 z-50 px-8 items-center justify-between pointer-events-none">
+      <header className={`hidden md:flex fixed top-0 left-0 right-0 h-20 z-50 px-8 items-center justify-between pointer-events-none transition-all duration-300 ${networkStatus.isOffline ? 'top-16' : 'top-0'}`}>
         <div className="pointer-events-auto cursor-pointer group" onClick={() => onNavigate('dashboard')}>
           <Logo size="large" />
         </div> 
@@ -388,7 +402,7 @@ const Layout: React.FC<LayoutProps> = ({
       )}
 
       {/* Main Content with Top Safe Area Handling */}
-      <main className="flex-1 max-w-5xl mx-auto w-full p-5 md:p-8 pt-4 md:pt-28 pb-28 md:pb-8">
+      <main className={`flex-1 max-w-5xl mx-auto w-full p-5 md:p-8 ${topPadding} pb-28 md:pb-8`}>
         {children}
       </main>
 

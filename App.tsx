@@ -19,6 +19,7 @@ import { useSettings } from './hooks/useSettings';
 import { useRealtimeNotifications } from './hooks/useRealtimeNotifications';
 import { useCrossDeviceNotifications } from './hooks/useCrossDeviceNotifications';
 import { useRealtimeSync } from './hooks/useRealtimeSync';
+import { useNetworkStatus } from './hooks/useNetworkStatus';
 import { updateFavicon, updatePWAIcons } from './lib/assets';
 import { pwaManager } from './lib/pwa';
 import { runNetworkDiagnostics } from './lib/networkTest';
@@ -89,6 +90,9 @@ const App: React.FC = () => {
 
   // Use the refactored settings hook
   const { settings, updateSettings, sendNotification: sendBrowserNotification } = useSettings();
+  
+  // Use network status hook
+  const networkStatus = useNetworkStatus();
 
   // Remove network diagnostics for now to focus on real-time functionality
   // useEffect(() => {
