@@ -62,7 +62,6 @@ const formatDate = (dateString: string) => {
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
-  const [theme, setTheme] = useState<ThemeMode>('light');
   const [currentView, setCurrentView] = useState<'dashboard' | 'new-trip' | 'trip-detail' | 'profile' | 'settings'>('dashboard');
   const [selectedTripId, setSelectedTripId] = useState<string | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState('itinerary');
@@ -88,6 +87,9 @@ const App: React.FC = () => {
     onConfirm: () => {}
   });
 
+  // Use the refactored settings hook
+  const { settings, updateSettings, sendNotification: sendBrowserNotification } = useSettings();
+
   // Remove network diagnostics for now to focus on real-time functionality
   // useEffect(() => {
   //   if (user) {
@@ -99,42 +101,41 @@ const App: React.FC = () => {
 
   // Restore state from sessionStorage on mount (after user is available)
   useEffect(() => {
-    if (typeof window !== 'undefined' && user) {
-      const savedView = sessionStorage.getItem('currentView');
+    if (user) {
+      const savedView = sessionStorage.getItem('currentView') as View;
       const savedTripId = sessionStorage.getItem('selectedTripId');
       const savedTab = sessionStorage.getItem('activeDetailTab');
       
-      if (savedView) setCurrentView(savedView as any);
-      if (savedTripId) setSelectedTripId(savedTripId);
-      if (savedTab) setActiveDetailTab(savedTab as any);
+      if (savedView && ['dashboard', 'new-trip', 'trip-detail', 'profile', 'settings'].includes(savedView)) {
+        setCurrentView(savedView);
+      }
+      if (savedTripId) {
+        setSelectedTripId(savedTripId);
+      }
+      if (savedTab) {
+        setActiveDetailTab(savedTab);
+      }
     }
   }, [user]);
 
   // Save state to sessionStorage when it changes
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (user) {
       sessionStorage.setItem('currentView', currentView);
       sessionStorage.setItem('selectedTripId', selectedTripId || '');
-    }
-  }, [currentView, selectedTripId]);
-
-  // Save active tab to sessionStorage when it changes
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
       sessionStorage.setItem('activeDetailTab', activeDetailTab);
     }
-  }, [activeDetailTab]);
-  
+  }, [user, currentView, selectedTripId, activeDetailTab]);
+
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [editName, setEditName] = useState('');
   const [editUsername, setEditUsername] = useState('');
   const [loadingUser, setLoadingUser] = useState(true);
   const [systemVersion, setSystemVersion] = useState('');
 
-  const { settings, updateSettings, sendNotification: sendBrowserNotification } = useSettings();
   const { sendRealtimeNotification } = useRealtimeNotifications(user);
   const { subscribe: subscribeToNotifications } = useCrossDeviceNotifications(user);
-  const { trips, loading: loadingTrips, addTrip, deleteTrip } = useTrips(user?.email, user?.id);
+  const { trips, loading: loadingTrips, addTrip, deleteTrip, updateTrip } = useTrips(user?.email, user?.id);
   
   // Setup real-time sync for notifications
   const notificationSync = useRealtimeSync({
@@ -707,10 +708,11 @@ const App: React.FC = () => {
   };
 
   return (
-    <Layout 
-      user={user} 
-      onLogout={handleLogout} 
-      onNavigate={handleNavigate as any}
+    <div className="main-app">
+      <Layout 
+        user={user} 
+        onLogout={handleLogout} 
+        onNavigate={handleNavigate as any}
       currentView={currentView}
       notifications={notifications}
       onMarkNotificationRead={onMarkNotificationRead}
@@ -726,6 +728,7 @@ const App: React.FC = () => {
           onSelectTrip={(id) => { setSelectedTripId(id); setCurrentView('trip-detail'); setActiveDetailTab('itinerary'); }}
           onNewTrip={() => setCurrentView('new-trip')}
           onDeleteTrip={deleteTrip}
+          onUpdateTrip={updateTrip}
           currentUserId={user?.id || ''}
         />
       )}
@@ -1042,6 +1045,7 @@ const App: React.FC = () => {
         ))}
       </div>
     </Layout>
+    </div>
   );
 };
 

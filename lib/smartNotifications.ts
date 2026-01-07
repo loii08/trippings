@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 import { User } from '../types';
 
 export const sendCollaborativeNotification = async (
-  action: 'itinerary_added' | 'itinerary_updated' | 'itinerary_deleted' | 'expense_added' | 'expense_updated' | 'expense_deleted' | 'status_updated' | 'member_accepted' | 'member_declined',
+  action: 'itinerary_added' | 'itinerary_updated' | 'itinerary_deleted' | 'expense_added' | 'expense_updated' | 'expense_deleted' | 'status_updated' | 'member_accepted' | 'member_declined' | 'trip_update',
   actor: User,
   tripId: string,
   tripTitle: string,
@@ -70,8 +70,14 @@ export const sendCollaborativeNotification = async (
       
     case 'member_declined':
       title = 'Member Declined';
-      body = `${actor.name || actor.username} declined the trip invitation`;
+      body = `${actor.name || actor.username} declined trip invitation`;
       type = 'warning';
+      break;
+      
+    case 'trip_update':
+      title = 'Trip Updated';
+      body = `${actor.name || actor.username} updated trip details: "${tripTitle}"`;
+      type = 'info';
       break;
   }
 

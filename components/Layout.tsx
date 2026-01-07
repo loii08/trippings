@@ -154,7 +154,7 @@ const Layout: React.FC<LayoutProps> = ({
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="min-h-screen flex flex-col bg-surface text-primary transition-colors">
       
       {/* Modern Desktop Header */}
       <header className="hidden md:flex fixed top-0 left-0 right-0 h-20 z-50 px-8 items-center justify-between pointer-events-none">
@@ -162,7 +162,7 @@ const Layout: React.FC<LayoutProps> = ({
           <Logo size="large" />
         </div> 
         {user && (
-          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border border-slate-200/50 dark:border-slate-800/50 px-2 py-1.5 rounded-[1.25rem] shadow-sm pointer-events-auto flex items-center gap-1">
+          <div className="bg-surface/80 backdrop-blur-xl border border-custom px-2 py-1.5 rounded-[1.25rem] shadow-sm pointer-events-auto flex items-center gap-1">
             <NavButton 
               active={currentView === 'dashboard'} 
               onClick={() => onNavigate('dashboard')}
@@ -175,7 +175,7 @@ const Layout: React.FC<LayoutProps> = ({
               icon={<Plus size={20} />}
               label="Plan"
             />
-            <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 mx-1" />
+            <div className="w-px h-6 bg-primary mx-1" />
             <NavButton 
               active={currentView === 'profile'} 
               onClick={() => onNavigate('profile')}
@@ -190,11 +190,11 @@ const Layout: React.FC<LayoutProps> = ({
             <>
               <button 
                 onClick={() => setShowNotifications(!showNotifications)}
-                className={`p-3 transition-colors relative rounded-2xl ${showNotifications ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600' : 'text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                className={`p-3 transition-colors relative rounded-2xl ${showNotifications ? 'bg-primary-soft text-primary' : 'text-muted hover:text-primary'}`}
               >
                 <Bell size={20} />
                 {unreadCount > 0 && (
-                  <span className="absolute top-2.5 right-2.5 w-4 h-4 bg-indigo-500 text-[10px] font-bold text-white flex items-center justify-center rounded-full border-2 border-white dark:border-slate-950">
+                  <span className="absolute top-2.5 right-2.5 w-4 h-4 bg-primary text-[10px] font-bold text-inverse flex items-center justify-center rounded-full border-2 border-surface">
                     {unreadCount > 9 ? '9+' : unreadCount}
                   </span>
                 )}
@@ -202,8 +202,8 @@ const Layout: React.FC<LayoutProps> = ({
 
               {/* Desktop Notification Popover */}
               {showNotifications && (
-                <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2rem] shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-[60]">
-                  <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-80 bg-surface border border-custom rounded-[2rem] shadow-2xl overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-[60]">
+                  <div className="p-4 border-b border-divider flex items-center justify-between">
                     <h3 className="font-bold">Notifications</h3>
                     <div className="flex gap-2">
                       {unreadCount > 0 && (
@@ -220,7 +220,7 @@ const Layout: React.FC<LayoutProps> = ({
                   </div>
                   <div className="max-h-96 overflow-y-auto no-scrollbar">
                     {activeNotifications.length === 0 ? (
-                      <div className="p-12 text-center text-slate-400">
+                      <div className="p-12 text-center text-muted">
                         <Bell size={32} className="mx-auto opacity-20 mb-2" />
                         <p className="text-xs font-medium">No activity yet</p>
                       </div>
@@ -229,19 +229,19 @@ const Layout: React.FC<LayoutProps> = ({
                         <div 
                           key={notif.id} 
                           onClick={() => handleNotificationClick(notif)}
-                          className={`p-4 border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer relative ${!notif.read ? 'bg-indigo-50/30 dark:bg-indigo-950/10' : ''}`}
+                          className={`p-4 border-b border-custom/50 hover:bg-surface/50 transition-colors cursor-pointer relative ${!notif.read ? 'bg-primary-soft/30' : ''}`}
                         >
                           <div className="flex items-start justify-between">
                             <div className="flex-1 min-w-0">
-                              {!notif.read && <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-8 bg-indigo-500 rounded-full" />}
+                              {!notif.read && <div className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-8 bg-primary rounded-full" />}
                               <div className="flex gap-3">
-                                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${notif.read ? 'bg-slate-100 dark:bg-slate-800 text-slate-400' : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600'}`}>
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${notif.read ? 'bg-primary-soft text-muted' : 'bg-primary-soft text-primary'}`}>
                                   <CheckCircle2 size={14} />
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <p className="text-xs font-bold text-slate-900 dark:text-white leading-tight">{notif.title}</p>
-                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">{notif.body}</p>
-                                  <p className="text-[9px] text-slate-400 mt-1 flex items-center gap-1"><Clock size={8} /> {formatTime(notif.timestamp)}</p>
+                                  <p className="text-xs font-bold text-primary leading-tight">{notif.title}</p>
+                                  <p className="text-[11px] text-secondary mt-1 line-clamp-2">{notif.body}</p>
+                                  <p className="text-[9px] text-muted mt-1 flex items-center gap-1"><Clock size={8} /> {formatTime(notif.timestamp)}</p>
                                 </div>
                               </div>
                             </div>
@@ -262,10 +262,10 @@ const Layout: React.FC<LayoutProps> = ({
                 </div>
               )}
 
-              <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 mx-1" />
+              <div className="w-px h-6 bg-divider mx-1" />
               <button 
                 onClick={onLogout}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-900 hover:bg-red-50 dark:hover:bg-red-950/30 text-slate-600 dark:text-slate-400 hover:text-red-600 transition-all font-bold text-sm"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-primary-soft hover:bg-error/10 text-muted hover:text-error transition-all font-bold text-sm"
               >
                 <LogOut size={16} />
                 Sign Out
@@ -276,21 +276,21 @@ const Layout: React.FC<LayoutProps> = ({
       </header>
 
       {/* Mobile Top Header - Respects Safe Area */}
-      <header className="md:hidden sticky top-0 bg-white/80 dark:bg-slate-950/80 backdrop-blur-lg border-b border-slate-100 dark:border-slate-900 z-[110] px-5 flex items-center justify-between pt-safe h-[calc(4rem+env(safe-area-inset-top))]">
+      <header className="md:hidden sticky top-0 bg-surface/80 backdrop-blur-lg border-b border-custom z-[110] px-5 flex items-center justify-between pt-safe h-[calc(4rem+env(safe-area-inset-top))]">
         <div className="flex items-center" onClick={() => onNavigate('dashboard')}>
           <Logo size="medium" showText={false} />
         </div>
         <div className="flex items-center gap-2">
            <button 
             onClick={() => setShowNotifications(!showNotifications)}
-            className={`p-2.5 transition-colors rounded-xl relative ${showNotifications ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600' : 'text-slate-500 dark:text-slate-400'}`}
+            className={`p-2.5 transition-colors rounded-xl relative ${showNotifications ? 'bg-primary-soft text-primary' : 'text-muted'}`}
            >
              <Bell size={20} />
-             {unreadCount > 0 && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-indigo-500 rounded-full border-2 border-white dark:border-slate-950"></span>}
+             {unreadCount > 0 && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-primary rounded-full border-2 border-surface"></span>}
            </button>
            <button 
             onClick={() => onNavigate('profile')}
-            className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold overflow-hidden shadow-inner"
+            className="w-9 h-9 rounded-full bg-primary text-inverse flex items-center justify-center font-bold overflow-hidden shadow-inner"
           >
             {user ? user.username.charAt(0).toUpperCase() : <UserIcon size={20} />}
           </button>
@@ -304,17 +304,17 @@ const Layout: React.FC<LayoutProps> = ({
           onClick={() => setShowNotifications(false)}
         >
           <div 
-            className="absolute top-[calc(4.5rem+env(safe-area-inset-top))] left-4 right-4 bg-white dark:bg-slate-900 rounded-[2.5rem] max-h-[75vh] flex flex-col shadow-2xl animate-in slide-in-from-top-12 duration-500 overflow-hidden border border-slate-200 dark:border-slate-800"
+            className="absolute top-[calc(4.5rem+env(safe-area-inset-top))] left-4 right-4 bg-surface rounded-[2.5rem] max-h-[75vh] flex flex-col shadow-2xl animate-in slide-in-from-top-12 duration-500 overflow-hidden border border-custom"
             onClick={(e) => e.stopPropagation()}
           >
-             <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-white dark:bg-slate-900">
+             <div className="p-5 border-b border-divider flex items-center justify-between bg-surface">
                 <div>
-                  <h3 className="text-lg font-black dark:text-white">Recent Activity</h3>
-                  {unreadCount > 0 && <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">{unreadCount} new alerts</p>}
+                  <h3 className="text-lg font-black text-primary">Recent Activity</h3>
+                  {unreadCount > 0 && <p className="text-[10px] font-bold text-primary uppercase tracking-widest">{unreadCount} new alerts</p>}
                 </div>
                 <button 
                   onClick={() => setShowNotifications(false)} 
-                  className="p-2.5 bg-slate-50 dark:bg-slate-800 rounded-full shadow-sm text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                  className="p-2.5 bg-primary-soft rounded-full shadow-sm text-muted hover:text-primary transition-colors"
                 >
                   <X size={18} />
                 </button>
@@ -394,7 +394,7 @@ const Layout: React.FC<LayoutProps> = ({
 
       {/* Modern Mobile Bottom Navigation - Respects Safe Area */}
       {user && (
-        <nav className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 w-[92%] bg-white/95 dark:bg-slate-900/95 backdrop-blur-2xl border border-slate-200/50 dark:border-slate-800/50 z-50 rounded-[2.5rem] flex items-center justify-between px-3 shadow-2xl shadow-indigo-200/20 dark:shadow-none h-[calc(4.5rem+env(safe-area-inset-bottom))] pb-safe">
+        <nav className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 w-[92%] bg-surface/95 backdrop-blur-2xl border border-custom z-50 rounded-[2.5rem] flex items-center justify-between px-3 shadow-2xl shadow-primary/20 h-[calc(4.5rem+env(safe-area-inset-bottom))] pb-safe">
           <MobileNavButton 
             active={currentView === 'dashboard'} 
             onClick={() => onNavigate('dashboard')}
@@ -403,7 +403,7 @@ const Layout: React.FC<LayoutProps> = ({
           
           <button 
             onClick={() => onNavigate('new-trip')}
-            className={`flex items-center justify-center bg-indigo-600 text-white w-14 h-14 rounded-full shadow-xl shadow-indigo-200 dark:shadow-none transition-all active:scale-90 ${currentView === 'new-trip' ? 'scale-110' : ''}`}
+            className={`flex items-center justify-center bg-primary text-inverse w-14 h-14 rounded-full shadow-xl shadow-primary/20 transition-all active:scale-90 ${currentView === 'new-trip' ? 'scale-110' : ''}`}
           >
             <Plus size={28} />
           </button>
@@ -422,7 +422,7 @@ const Layout: React.FC<LayoutProps> = ({
 const NavButton = ({ active, onClick, icon, label }: any) => (
   <button 
     onClick={onClick}
-    className={`flex items-center gap-2 px-5 py-2.5 rounded-[1.125rem] text-sm font-bold transition-all ${active ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100 dark:shadow-none' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+    className={`flex items-center gap-2 px-5 py-2.5 rounded-[1.125rem] text-sm font-bold transition-all ${active ? 'bg-primary text-inverse shadow-md shadow-primary/20' : 'text-secondary hover:text-primary hover:bg-primary-soft'}`}
   >
     {icon}
     {label}
@@ -432,7 +432,7 @@ const NavButton = ({ active, onClick, icon, label }: any) => (
 const MobileNavButton = ({ active, onClick, icon }: any) => (
   <button 
     onClick={onClick}
-    className={`flex-1 flex items-center justify-center h-14 rounded-[1.75rem] transition-all ${active ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/30 font-bold' : 'text-slate-400 dark:text-slate-600'}`}
+    className={`flex-1 flex items-center justify-center h-14 rounded-[1.75rem] transition-all ${active ? 'text-primary bg-primary-soft font-bold' : 'text-muted'}`}
   >
     {icon}
   </button>

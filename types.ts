@@ -52,15 +52,17 @@ export interface ActivityLog {
 
 export interface Trip {
   id: string;
-  ownerId: string;
+  user_id: string;
   title: string;
   description?: string;
-  startDate: string;
-  endDate: string;
+  start_date: string;
+  end_date: string;
   destination?: string;
-  budget?: number;
-  createdAt: number;
-  updatedAt: number;
+  budget?: string;
+  currency?: string;
+  status?: PlanStatus;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ItineraryEntry {

@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { Trip } from '../types';
-import { Calendar, MapPin, ChevronRight, Plus, Briefcase, DollarSign, Trash2, X, AlertTriangle } from 'lucide-react';
+import { Calendar, MapPin, ChevronRight, Plus, Briefcase, DollarSign, Trash2, X, AlertTriangle, MoreVertical, Edit } from 'lucide-react';
 
 interface DashboardProps {
   trips: Trip[];
@@ -9,12 +9,17 @@ interface DashboardProps {
   onSelectTrip: (id: string) => void;
   onNewTrip: () => void;
   onDeleteTrip: (id: string) => void;
+  onUpdateTrip: (id: string, updates: Partial<Trip>) => void;
   currentUserId: string;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ trips, loading, onSelectTrip, onNewTrip, onDeleteTrip, currentUserId }) => {
+const Dashboard: React.FC<DashboardProps> = ({ trips, loading, onSelectTrip, onNewTrip, onDeleteTrip, onUpdateTrip, currentUserId }) => {
   const [deleteModal, setDeleteModal] = useState<{ open: boolean; trip: Trip | null }>({ open: false, trip: null });
   const [confirmationText, setConfirmationText] = useState('');
+  const [activeMenu, setActiveMenu] = useState<string | null>(null);
+  const [editModal, setEditModal] = useState<{ open: boolean; trip: Trip | null }>({ open: false, trip: null });
+  const [editForm, setEditForm] = useState({ title: '', startDate: '', endDate: '', location: '', description: '', budget: 0 });
+  const [originalFormData, setOriginalFormData] = useState({ title: '', startDate: '', endDate: '', location: '', description: '', budget: 0 });
   if (loading) {
     return (
       <div className="space-y-4">
@@ -76,12 +81,17 @@ const Dashboard: React.FC<DashboardProps> = ({ trips, loading, onSelectTrip, onN
                   <div className="flex flex-wrap items-center gap-4 mt-1.5 text-xs text-slate-400 font-bold uppercase tracking-wider">
                     <span className="flex items-center gap-1.5">
                       <Calendar size={14} strokeWidth={2.5} />
-                      {new Date(trip.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      {trip.start_date} - {trip.end_date}
                     </span>
-                    {trip.location && (
+                    {trip.destination && (
                       <span className="flex items-center gap-1.5 truncate">
                         <MapPin size={14} strokeWidth={2.5} />
-                        {trip.location}
+                        {trip.destination}
+                      </span>
+                    )}
+                    {trip.budget && (
+                      <span className="flex items-center gap-1.5">
+                        {parseFloat(trip.budget).toLocaleString(undefined, { style: 'currency', currency: trip.currency || 'PHP' })}
                       </span>
                     )}
                   </div>
@@ -92,18 +102,63 @@ const Dashboard: React.FC<DashboardProps> = ({ trips, loading, onSelectTrip, onN
                 </div>
               </div>
               
-              {trip.ownerId === currentUserId && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDeleteModal({ open: true, trip });
-                    setConfirmationText('');
-                  }}
-                  className="w-10 h-10 rounded-full bg-red-50 dark:bg-red-950/20 flex items-center justify-center text-red-400 dark:text-red-500 hover:bg-red-100 dark:hover:bg-red-950/40 transition-all opacity-0 group-hover:opacity-100"
-                  title="Delete trip"
-                >
-                  <Trash2 size={16} strokeWidth={2.5} />
-                </button>
+              {trip.user_id === currentUserId && (
+                <div className="relative">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveMenu(activeMenu === trip.id ? null : trip.id);
+                    }}
+                    className="w-10 h-10 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-300 dark:text-slate-700 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/30 group-hover:text-indigo-600 transition-all"
+                    title="More options"
+                  >
+                    <MoreVertical size={18} strokeWidth={2.5} />
+                  </button>
+                  
+                  {activeMenu === trip.id && (
+                    <div className="absolute right-0 top-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-lg py-2 min-w-[160px] z-10">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveMenu(null);
+                          setEditModal({ open: true, trip });
+                          setEditForm({
+                            title: trip.title,
+                            startDate: trip.start_date,
+                            endDate: trip.end_date,
+                            location: trip.destination || '',
+                            description: trip.description || '',
+                            budget: parseFloat(trip.budget || '0')
+                          });
+                          setOriginalFormData({
+                            title: trip.title,
+                            startDate: trip.start_date,
+                            endDate: trip.end_date,
+                            location: trip.destination || '',
+                            description: trip.description || '',
+                            budget: parseFloat(trip.budget || '0')
+                          });
+                        }}
+                        className="w-full px-4 py-3 flex items-center gap-3 text-sm font-medium text-primary hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition-colors text-left"
+                      >
+                        <Edit size={16} strokeWidth={2.5} />
+                        Edit Trip
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveMenu(null);
+                          setDeleteModal({ open: true, trip });
+                          setConfirmationText('');
+                        }}
+                        className="w-full px-4 py-3 flex items-center gap-3 text-sm font-medium text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors text-left"
+                      >
+                        <Trash2 size={16} strokeWidth={2.5} />
+                        Delete Trip
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           ))}
@@ -174,6 +229,148 @@ const Dashboard: React.FC<DashboardProps> = ({ trips, loading, onSelectTrip, onN
                   className="flex-1 px-5 py-3 rounded-xl font-bold text-sm bg-red-600 text-white hover:bg-red-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:text-slate-500 dark:disabled:text-slate-600 transition-colors disabled:cursor-not-allowed"
                 >
                   Delete Trip
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Edit Trip Modal */}
+      {editModal.open && editModal.trip && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-slate-900 rounded-[2rem] p-8 max-w-md w-full shadow-2xl">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-indigo-50 dark:bg-indigo-950/20 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <Edit size={24} strokeWidth={2.5} />
+                </div>
+                <h2 className="text-xl font-black text-slate-900 dark:text-white">Edit Trip</h2>
+              </div>
+              <button
+                onClick={() => setEditModal({ open: false, trip: null })}
+                className="w-8 h-8 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
+              >
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+            
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                  Title
+                </label>
+                <input
+                  type="text"
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  placeholder="Trip title"
+                  className="w-full px-4 py-3 rounded-xl border border-custom bg-surface text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                  Destination
+                </label>
+                <input
+                  type="text"
+                  value={editForm.location}
+                  onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+                  placeholder="Where are you going?"
+                  className="w-full px-4 py-3 rounded-xl border border-custom bg-surface text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <textarea
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  placeholder="Describe your trip..."
+                  rows={3}
+                  className="w-full px-4 py-3 rounded-xl border border-custom bg-surface text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                  Budget
+                </label>
+                <input
+                  type="number"
+                  value={editForm.budget}
+                  onChange={(e) => setEditForm({ ...editForm, budget: parseFloat(e.target.value) || 0 })}
+                  placeholder="0.00"
+                  step="0.01"
+                  min="0"
+                  className="w-full px-4 py-3 rounded-xl border border-custom bg-surface text-primary placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editForm.startDate}
+                    onChange={(e) => setEditForm({ ...editForm, startDate: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border border-custom bg-surface text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editForm.endDate}
+                    onChange={(e) => setEditForm({ ...editForm, endDate: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl border border-custom bg-surface text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                  />
+                </div>
+              </div>
+              
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => setEditModal({ open: false, trip: null })}
+                  className="flex-1 px-5 py-3 rounded-xl font-bold text-sm bg-primary-soft text-muted hover:bg-surface transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    onUpdateTrip(editModal.trip.id, {
+                      title: editForm.title,
+                      start_date: editForm.startDate,
+                      end_date: editForm.endDate,
+                      destination: editForm.location,
+                      description: editForm.description,
+                      budget: editForm.budget
+                    });
+                    setEditModal({ open: false, trip: null });
+                    setOriginalFormData({
+                      title: editForm.title,
+                      startDate: editForm.startDate,
+                      endDate: editForm.endDate,
+                      location: editForm.location,
+                      description: editForm.description,
+                      budget: editForm.budget
+                    });
+                  }}
+                  className={
+                    (editForm.title === originalFormData.title && 
+                     editForm.startDate === originalFormData.startDate && 
+                     editForm.endDate === originalFormData.endDate && 
+                     editForm.location === originalFormData.location && 
+                     editForm.description === originalFormData.description && 
+                     editForm.budget === originalFormData.budget)
+                      ? "flex-1 px-5 py-3 rounded-xl font-bold text-sm bg-muted text-secondary disabled:cursor-not-allowed transition-colors"
+                      : "flex-1 px-5 py-3 rounded-xl font-bold text-sm bg-primary text-inverse hover:bg-primary-hover transition-colors"
+                  }
+                >
+                  Save Changes
                 </button>
               </div>
             </div>

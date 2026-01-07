@@ -11,22 +11,65 @@ const DEFAULT_SETTINGS: UserSettings = {
   pushNotifications: false,
 };
 
-export const useSettings = () => {
-  const [settings, setSettings] = useState<UserSettings>(() => {
-    const saved = localStorage.getItem(SETTINGS_KEY);
-    return saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
-  });
-
-  const applyTheme = useCallback((theme: ThemeMode) => {
+// Theme management utilities
+const ThemeManager = {
+  /**
+   * Apply theme to document element
+   */
+  applyTheme(theme: ThemeMode): void {
     const root = window.document.documentElement;
+    
+    // Remove existing theme classes
     root.classList.remove('light', 'dark');
-
+    
+    // Apply new theme
     if (theme === 'system') {
       const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
       root.classList.add(systemTheme);
     } else {
       root.classList.add(theme);
     }
+    
+    // Update meta theme-color for mobile browsers
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      metaThemeColor.setAttribute('content', isDark ? '#020617' : '#4F46E5');
+    }
+  },
+
+  /**
+   * Initialize theme on app load
+   */
+  initializeTheme(settings: UserSettings): void {
+    // Apply theme immediately
+    this.applyTheme(settings.theme);
+    
+    // Listen for system theme changes if using system theme
+    if (settings.theme === 'system') {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const handleSystemThemeChange = () => this.applyTheme('system');
+      
+      mediaQuery.addEventListener('change', handleSystemThemeChange);
+    }
+  }
+};
+
+export const useSettings = () => {
+  const [settings, setSettings] = useState<UserSettings>(() => {
+    const saved = localStorage.getItem(SETTINGS_KEY);
+    const initialSettings = saved ? JSON.parse(saved) : DEFAULT_SETTINGS;
+    
+    // Initialize theme immediately on first load
+    if (typeof window !== 'undefined') {
+      ThemeManager.initializeTheme(initialSettings);
+    }
+    
+    return initialSettings;
+  });
+
+  const applyTheme = useCallback((theme: ThemeMode) => {
+    ThemeManager.applyTheme(theme);
   }, []);
 
   // Persist settings and apply theme on change

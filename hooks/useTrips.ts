@@ -71,16 +71,18 @@ export const useTrips = (userEmail: string | undefined, userId: string | undefin
           const allRaw = [...(ownedTrips || []), ...sharedTrips];
           const mapped = allRaw.map(t => ({
             id: t.id,
-            ownerId: t.user_id,
+            user_id: t.user_id,
             title: t.title,
             description: t.description,
-            startDate: t.start_date,
-            endDate: t.end_date,
-            location: t.destination,
+            start_date: t.start_date,
+            end_date: t.end_date,
+            destination: t.destination,
             budget: t.budget,
-            createdAt: new Date(t.created_at).getTime(),
-            updatedAt: new Date(t.updated_at || t.created_at).getTime(),
-          })).sort((a, b) => b.createdAt - a.createdAt);
+            currency: t.currency,
+            status: t.status,
+            created_at: t.created_at,
+            updated_at: t.updated_at,
+          })).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
           
           const uniqueTrips = Array.from(new Map(mapped.map(t => [t.id, t])).values());
           
@@ -267,5 +269,65 @@ export const useTrips = (userEmail: string | undefined, userId: string | undefin
     }
   };
 
-  return { trips, loading, addTrip, deleteTrip, refresh: fetchTrips };
+  const updateTrip = async (id: string, updates: Partial<Trip>) => {
+    if (!userId) return;
+    
+    // Store original trip for potential rollback
+    const originalTrip = trips.find(t => t.id === id);
+    if (!originalTrip) return;
+
+    try {
+      // Create optimistic update for immediate UI update
+      const updatedTrip = { ...originalTrip, ...updates };
+      setTrips(prev => prev.map(trip => 
+        trip.id === id ? updatedTrip : trip
+      ));
+
+      // Update in Supabase
+      if (offlineSyncManager.onlineStatus) {
+        // Map camelCase fields to snake_case for Supabase
+        const supabaseUpdates: any = {};
+        if (updates.title) supabaseUpdates.title = updates.title;
+        if (updates.description) supabaseUpdates.description = updates.description;
+        if (updates.destination) supabaseUpdates.destination = updates.destination;
+        if (updates.start_date) supabaseUpdates.start_date = updates.start_date;
+        if (updates.end_date) supabaseUpdates.end_date = updates.end_date;
+        if (updates.budget !== undefined) supabaseUpdates.budget = updates.budget;
+        
+        const { error } = await supabase
+          .from('trips')
+          .update(supabaseUpdates)
+          .eq('id', id);
+
+        if (error) throw error;
+      }
+
+      // Update IndexedDB with real data
+      await Promise.all(trips.map(trip => db.trips.put(trip)));
+      
+      // Log activity and send collaborative notification
+      const user = { id: userId, email: userEmail || '', username: '', joinedAt: Date.now() };
+      await logActivity(user, 'Updated Trip', `Modified "${originalTrip.title}"`, 'trip', id);
+      
+      // Show toast only for important actions
+      if (shouldShowToast('updated')) {
+        showToast('Trip updated successfully', getToastType('updated'));
+      }
+      
+      return updatedTrip;
+    } catch (error) {
+      // Failed to update trip
+      
+      // Rollback optimistic update on error
+      setTrips(prev => prev.map(trip => 
+        trip.id === id ? originalTrip : trip
+      ));
+      await db.trips.put(originalTrip);
+      
+      showToast('Failed to update trip. Please try again.', 'error');
+      throw error;
+    }
+  };
+
+  return { trips, loading, addTrip, deleteTrip, updateTrip, refresh: fetchTrips };
 };

@@ -25,16 +25,12 @@ export const useTripDetail = (tripId: string, userId?: string, userEmail?: strin
     userId: userId || '',
     userEmail: userEmail || '',
     onItineraryChange: (data) => {
-      console.log('🔄 React received itinerary change:', data.length, 'items');
       setItinerary(data);
     },
     onExpenseChange: (data) => {
-      console.log('🔄 React received expense change:', data.length, 'items');
       setExpenses(data);
     },
     onActivityChange: (data) => {
-      console.log('🔄 React received activity change:', data.length, 'items');
-      console.log('🔄 Activity logs in React:', data.map(l => ({ id: l.id, userName: l.userName, action: l.action })));
       setActivityLogs(data);
     }
   });

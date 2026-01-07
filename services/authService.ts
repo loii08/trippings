@@ -49,6 +49,16 @@ export const authService = {
     return userWithoutPassword;
   },
 
+  async checkEmailExists(email: string): Promise<boolean> {
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('email')
+      .eq('email', email)
+      .maybeSingle();
+
+    return !error && !!user;
+  },
+
   async signup(email: string, username: string, password?: string): Promise<User> {
     if (!password) throw new Error('Password is required');
 

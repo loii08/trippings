@@ -1,6 +1,5 @@
-
 import React, { useState } from 'react';
-import { Compass, Mail, Lock, User, ArrowRight, Github, Chrome, Loader2 } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Globe, Sparkles } from 'lucide-react';
 import { authService } from '../services/authService';
 
 interface AuthProps {
@@ -16,6 +15,42 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onGoogleLogin }) => {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+
+  // Email validation function
+  const validateEmail = async (email: string) => {
+    if (!email) {
+      setEmailError('');
+      return;
+    }
+
+    // Basic email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setEmailError('Please enter a valid email address');
+      return;
+    }
+
+    // Check if email already exists (only for signup)
+    if (!isLogin) {
+      setIsCheckingEmail(true);
+      try {
+        const exists = await authService.checkEmailExists(email);
+        if (exists) {
+          setEmailError('This email is already registered');
+        } else {
+          setEmailError('');
+        }
+      } catch (err) {
+        setEmailError('Failed to validate email');
+      } finally {
+        setIsCheckingEmail(false);
+      }
+    } else {
+      setEmailError('');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,11 +62,20 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onGoogleLogin }) => {
         const identifier = email || username;
         await onLogin(identifier, password);
       } else {
+        // Final email validation before signup
+        if (emailError) {
+          setError('Please fix the email errors before continuing');
+          return;
+        }
         await authService.signup(email, username, password);
         await onLogin(email, password);
       }
-    } catch (err) {
-      setError('Authentication failed. Please check your credentials.');
+    } catch (err: any) {
+      if (err.message?.includes('duplicate key') || err.message?.includes('already exists')) {
+        setError('An account with this email or username already exists');
+      } else {
+        setError('Authentication failed. Please check your credentials.');
+      }
     } finally {
       setLoading(false);
     }
@@ -49,147 +93,245 @@ const Auth: React.FC<AuthProps> = ({ onLogin, onGoogleLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50 dark:bg-slate-950 relative overflow-hidden">
-      {/* Background Decorative Elements */}
-      <div className="absolute top-0 left-0 w-full h-full -z-10 opacity-30">
-        <div className="absolute top-[10%] left-[5%] w-72 h-72 bg-indigo-400 rounded-full blur-[100px]"></div>
-        <div className="absolute bottom-[10%] right-[5%] w-96 h-96 bg-purple-400 rounded-full blur-[100px]"></div>
-      </div>
-
-      <div className="max-w-4xl w-full grid md:grid-cols-2 bg-white dark:bg-slate-900 rounded-[3rem] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800">
-        
-        {/* Left Side: Branding/Hero */}
-        <div className="hidden md:flex flex-col justify-between p-12 bg-indigo-600 text-white relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500 rounded-full -mr-20 -mt-20 opacity-50 blur-3xl"></div>
+    <div className="min-h-screen flex items-center justify-center p-4">
+      {/* Main Container */}
+      <div className="relative w-full max-w-[440px] md:max-w-[500px] lg:max-w-[540px] z-10">
+        {/* Header */}
+        <div className="text-center mb-8 md:mb-12">
+          <div className="flex items-center justify-center gap-3 mb-6">
+            <div className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <Sparkles className="w-6 h-6 md:w-7 md:h-7 text-white" />
+            </div>
+            <div className="text-left">
+              <h1 className="text-2xl md:text-3xl font-bold text-primary tracking-tight">
+                Trippings
+              </h1>
+              <p className="text-sm md:text-base text-secondary font-medium">
+                Travel Intelligence Platform
+              </p>
+            </div>
+          </div>
           
-          <div className="relative z-10">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center">
-                <Compass size={24} className="text-white" />
-              </div>
-              <span className="text-2xl font-bold tracking-tight text-white">Trippings</span>
-            </div>
-            <h1 className="text-4xl font-extrabold leading-tight mb-4 text-white">
-              Your journeys, <br />
-              perfectly synced.
-            </h1>
-            <p className="text-indigo-100 text-lg">
-              The ultimate tool for modern travelers. Plan itineraries, track expenses, and discover more.
-            </p>
-          </div>
-
-          <div className="relative z-10 flex gap-8">
-            <div>
-              <p className="text-3xl font-bold">10k+</p>
-              <p className="text-sm text-indigo-200">Active Explorers</p>
-            </div>
-            <div>
-              <p className="text-3xl font-bold">50k+</p>
-              <p className="text-sm text-indigo-200">Trips Planned</p>
-            </div>
-          </div>
+          <h2 className="text-2xl md:text-3xl font-bold text-primary mb-3">
+            {isLogin ? 'Welcome back' : 'Create account'}
+          </h2>
+          <p className="text-secondary text-sm md:text-base">
+            {isLogin 
+              ? 'Sign in to access your travel dashboard' 
+              : 'Start your journey with intelligent trip planning'}
+          </p>
         </div>
 
-        {/* Right Side: Form */}
-        <div className="p-8 md:p-12 lg:p-16 flex flex-col justify-center bg-white dark:bg-slate-900">
-          <div className="mb-10 text-center md:text-left">
-            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">
-              {isLogin ? 'Welcome back' : 'Create account'}
-            </h2>
-            <p className="text-slate-500 dark:text-slate-400">
-              {isLogin ? 'Enter your details to access your trips.' : 'Start your next adventure with Trippings.'}
-            </p>
+        {/* Card */}
+        <div className="bg-surface rounded-3xl shadow-xl border border-custom p-6 md:p-8 lg:p-10">
+          {/* Mode Toggle */}
+          <div className="flex bg-primary-soft rounded-2xl p-1 mb-8">
+            <button
+              onClick={() => setIsLogin(true)}
+              className={`flex-1 py-3 px-4 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                isLogin 
+                  ? 'bg-surface shadow-sm text-primary' 
+                  : 'text-secondary hover:text-primary'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              onClick={() => setIsLogin(false)}
+              className={`flex-1 py-3 px-4 rounded-xl text-sm font-semibold transition-all duration-200 ${
+                !isLogin 
+                  ? 'bg-surface shadow-sm text-primary' 
+                  : 'text-secondary hover:text-primary'
+              }`}
+            >
+              Sign Up
+            </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-5">
             {!isLogin && (
-              <div className="relative">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-                  <div className="w-8 h-8 bg-slate-100 dark:bg-slate-700 rounded-xl flex items-center justify-center">
-                    <Mail size={16} className="text-slate-500 dark:text-slate-400" />
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-secondary">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                    <Mail className="w-5 h-5 text-muted" />
                   </div>
+                  <input
+                    type="email"
+                    required
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      validateEmail(e.target.value);
+                    }}
+                    onBlur={() => validateEmail(email)}
+                    className={`w-full pl-12 pr-4 py-3.5 rounded-xl border transition-all duration-200 bg-primary-soft focus:bg-surface focus:ring-2 focus:ring-primary/20 outline-none text-primary placeholder:text-muted ${
+                      emailError 
+                        ? 'border-error focus:ring-error/20' 
+                        : 'border-custom focus:border-primary'
+                    }`}
+                  />
                 </div>
-                <input
-                  type="email"
-                  required
-                  placeholder="Email address"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-16 pr-4 py-4 rounded-3xl border-2 border-slate-50 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 focus:bg-white dark:focus:bg-slate-800 focus:border-indigo-600 outline-none dark:text-white"
-                />
+                {emailError && (
+                  <div className="flex items-center gap-2 mt-2 text-sm">
+                    {isCheckingEmail ? (
+                      <div className="w-4 h-4 border-2 border-warning border-t-warning rounded-full animate-spin" />
+                    ) : (
+                      <div className="w-4 h-4 text-error">
+                        <svg fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                    )}
+                    <span className={`${emailError.includes('already') ? 'text-error' : 'text-warning'} font-medium`}>
+                      {emailError}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
             
-            <div className="relative">
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-                <div className="w-8 h-8 bg-slate-100 dark:bg-slate-700 rounded-xl flex items-center justify-center">
-                  <User size={16} className="text-slate-500 dark:text-slate-400" />
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-secondary">
+                {isLogin ? 'Username or Email' : 'Username'}
+              </label>
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                  <User className="w-5 h-5 text-muted" />
                 </div>
+                <input
+                  type="text"
+                  required
+                  placeholder={isLogin ? "username or email" : "choose a username"}
+                  value={isLogin ? (email || username) : username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3.5 rounded-xl border border-custom bg-primary-soft focus:bg-surface focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-primary placeholder:text-muted"
+                />
               </div>
-              <input
-                type="text"
-                required
-                placeholder={isLogin ? "Username or Email" : "Username"}
-                value={isLogin ? (email || username) : username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="w-full pl-16 pr-4 py-4 rounded-3xl border-2 border-slate-50 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 focus:bg-white dark:focus:bg-slate-800 focus:border-indigo-600 outline-none dark:text-white"
-              />
             </div>
 
-            <div className="relative">
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">
-                <div className="w-8 h-8 bg-slate-100 dark:bg-slate-700 rounded-xl flex items-center justify-center">
-                  <Lock size={16} className="text-slate-500 dark:text-slate-400" />
-                </div>
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-sm font-medium text-secondary">
+                  Password
+                </label>
+                {isLogin && (
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary hover:text-primary-hover"
+                  >
+                    Forgot password?
+                  </button>
+                )}
               </div>
-              <input
-                type="password"
-                required
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-16 pr-4 py-4 rounded-3xl border-2 border-slate-50 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 focus:bg-white dark:focus:bg-slate-800 focus:border-indigo-600 outline-none dark:text-white"
-              />
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                  <Lock className="w-5 h-5 text-muted" />
+                </div>
+                <input
+                  type="password"
+                  required
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3.5 rounded-xl border border-custom bg-primary-soft focus:bg-surface focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-all text-primary placeholder:text-muted"
+                />
+              </div>
             </div>
 
-            {error && <p className="text-red-500 text-sm font-medium">{error}</p>}
+            {error && (
+              <div className="p-4 rounded-xl bg-error/10 border border-error/20">
+                <p className="text-sm font-medium text-error text-center">{error}</p>
+              </div>
+            )}
+
+            {emailError && !error && (
+              <div className="p-3 rounded-xl bg-warning/10 border border-warning/20">
+                <p className="text-sm font-medium text-warning text-center">{emailError}</p>
+              </div>
+            )}
 
             <button
               type="submit"
               disabled={loading || googleLoading}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-3xl shadow-xl shadow-indigo-100 dark:shadow-none transition-all flex items-center justify-center gap-2 group disabled:opacity-70"
+              className="w-full bg-primary hover:bg-primary-hover text-inverse font-semibold py-3.5 rounded-xl shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all duration-200 flex items-center justify-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed"
             >
-              {loading ? (isLogin ? 'Authenticating...' : 'Creating Account...') : (isLogin ? 'Sign In' : 'Create Account')}
-              {!loading && !googleLoading && <ArrowRight size={20} className="group-hover:translate-x-1 transition-transform" />}
+              {loading ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-inverse/30 border-t-inverse rounded-full animate-spin" />
+                  {isLogin ? 'Signing in...' : 'Creating account...'}
+                </>
+              ) : (
+                <>
+                  {isLogin ? 'Sign In' : 'Create Account'}
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </>
+              )}
             </button>
           </form>
 
-          <div className="mt-8 relative text-center">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100 dark:border-slate-800"></div></div>
-            <span className="relative bg-white dark:bg-slate-900 px-4 text-xs font-bold text-slate-400 uppercase tracking-widest">or continue with</span>
+          {/* Divider */}
+          <div className="relative my-8">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-custom" />
+            </div>
+            <div className="relative flex justify-center">
+              <span className="px-4 bg-surface text-sm font-medium text-muted">
+                Or continue with
+              </span>
+            </div>
           </div>
 
-          <div className="mt-6">
+          {/* Social Login */}
+          <div>
             <button 
               onClick={handleGoogleClick}
               disabled={true}
-              className="w-full flex items-center justify-center gap-2 py-4 rounded-3xl border-2 border-slate-50 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 font-bold cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-3 py-3.5 rounded-xl border border-custom bg-primary-soft text-secondary font-medium hover:bg-surface hover:border-primary transition-all duration-200 cursor-not-allowed opacity-60"
             >
-              <div className="w-5 h-5 bg-white dark:bg-slate-700 rounded-lg flex items-center justify-center">
-                <Chrome size={16} className="text-slate-600 dark:text-slate-400" />
+              <div className="w-5 h-5">
+                <Globe className="w-full h-full text-muted" />
               </div>
-              Google Sign-In (Unavailable)
+              Google Sign-In (Coming Soon)
             </button>
           </div>
 
-          <p className="mt-10 text-center text-slate-500 dark:text-slate-400 font-medium">
-            {isLogin ? "Don't have an account?" : "Already have an account?"}{' '}
-            <button 
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-indigo-600 font-bold hover:underline"
-            >
-              {isLogin ? 'Sign up now' : 'Sign in here'}
-            </button>
+          {/* Terms */}
+          <div className="mt-8 pt-6 border-t border-custom text-center">
+            <p className="text-xs text-muted">
+              By continuing, you agree to our{' '}
+              <button className="text-primary font-medium hover:text-primary-hover">
+                Terms of Service
+              </button>{' '}
+              and{' '}
+              <button className="text-primary font-medium hover:text-primary-hover">
+                Privacy Policy
+              </button>
+            </p>
+          </div>
+
+          {/* Switch Mode */}
+          <div className="mt-6 text-center">
+            <p className="text-sm text-secondary">
+              {isLogin ? "Don't have an account?" : "Already have an account?"}{' '}
+              <button 
+                onClick={() => setIsLogin(!isLogin)}
+                className="text-primary font-semibold hover:text-primary-hover transition-colors"
+              >
+                {isLogin ? 'Sign up' : 'Sign in'}
+              </button>
+            </p>
+          </div>
+        </div>
+
+        {/* Footer Note */}
+        <div className="mt-6 text-center">
+          <p className="text-xs text-muted">
+            © {new Date().getFullYear()} Trippings. All rights reserved.
           </p>
         </div>
       </div>
