@@ -48,7 +48,7 @@ import {
 // Import toast system
 import { showToast, subscribeToToasts, getToasts } from './toast-system';
 
-const APP_VERSION = '2.8.0 (Supabase)';
+const APP_VERSION = '2.9.0 (Offline Mode Available)';
 type View = 'dashboard' | 'new-trip' | 'trip-detail' | 'profile' | 'settings';
 
 // Format dates for display
